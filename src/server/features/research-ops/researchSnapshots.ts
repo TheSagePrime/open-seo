@@ -2,9 +2,9 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { projectResearchSnapshots } from "@/db/schema";
 
-export type ResearchSnapshotOrigin = "provider" | "backfill" | "import";
+type ResearchSnapshotOrigin = "provider" | "backfill" | "import";
 
-export type ResearchSnapshotInput = {
+type ResearchSnapshotInput = {
   projectId: string;
   researchType: string;
   request: Record<string, unknown>;
@@ -16,7 +16,7 @@ export type ResearchSnapshotInput = {
   researchedAt?: string;
 };
 
-export type ResearchSnapshot = {
+type ResearchSnapshot = {
   id: string;
   projectId: string;
   researchType: string;
@@ -46,7 +46,7 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-export function canonicalResearchRequest(
+function canonicalResearchRequest(
   request: Record<string, unknown>,
 ): Record<string, unknown> {
   return canonicalize(request) as Record<string, unknown>;
@@ -62,7 +62,7 @@ async function sha256Hex(input: string): Promise<string> {
   ).join("");
 }
 
-export async function buildResearchSnapshotHash(
+async function buildResearchSnapshotHash(
   researchType: string,
   request: Record<string, unknown>,
 ): Promise<string> {
