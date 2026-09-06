@@ -71,7 +71,7 @@ export async function fetchCachedKeywordMetrics(
   });
 
   const cached = cachedMetricsSchema.safeParse(await getCached(cacheKey));
-  if (cached.success && cached.data.rows.length > 0) {
+  if (cached.success) {
     return { rows: cached.data.rows, cacheHit: true };
   }
 
@@ -81,8 +81,6 @@ export async function fetchCachedKeywordMetrics(
     languageCode: input.languageCode,
     includeClickstreamData,
   });
-  if (rows.length > 0) {
-    await setCached(cacheKey, { rows }, CACHE_TTL.keywordMetrics);
-  }
+  await setCached(cacheKey, { rows }, CACHE_TTL.keywordMetrics);
   return { rows, cacheHit: false };
 }
