@@ -120,6 +120,31 @@ export async function findLatestResearchSnapshot(params: {
   return rows[0] ? parseSnapshotRow(rows[0]) : null;
 }
 
+export async function researchSnapshotExists(params: {
+  projectId: string;
+  researchType: string;
+  request: Record<string, unknown>;
+  researchedAt: string;
+}): Promise<boolean> {
+  const requestHash = await buildResearchSnapshotHash(
+    params.researchType,
+    params.request,
+  );
+  const rows = await db
+    .select({ id: projectResearchSnapshots.id })
+    .from(projectResearchSnapshots)
+    .where(
+      and(
+        eq(projectResearchSnapshots.projectId, params.projectId),
+        eq(projectResearchSnapshots.researchType, params.researchType),
+        eq(projectResearchSnapshots.requestHash, requestHash),
+        eq(projectResearchSnapshots.researchedAt, params.researchedAt),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function saveResearchSnapshot(
   input: ResearchSnapshotInput,
 ): Promise<{ id: string; requestHash: string }> {
