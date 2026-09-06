@@ -57,6 +57,7 @@ import {
   listBusinessCategoriesTool,
 } from "@/server/mcp/tools/local-seo-tools";
 import { researchKeywordsTool } from "@/server/mcp/tools/research-keywords";
+import { getResearchCostHistoryTool } from "@/server/mcp/tools/get-research-cost-history";
 import { saveKeywordsTool } from "@/server/mcp/tools/save-keywords";
 import {
   getSearchConsolePerformanceTool,
@@ -164,6 +165,7 @@ export function createOpenSeoMcpServer(authProps: McpProps) {
   register(updateProjectContextTool);
   register(listSavedKeywordsTool);
   register(researchKeywordsTool);
+  register(getResearchCostHistoryTool);
   register(saveKeywordsTool);
   register(getDomainOverviewTool);
   register(getDomainKeywordSuggestionsTool);

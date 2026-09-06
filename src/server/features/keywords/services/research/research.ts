@@ -44,6 +44,7 @@ type ResearchResult = {
   source: ResearchSource;
   usedFallback: boolean;
   diagnostics: ResearchDiagnostics;
+  cacheHit?: boolean;
 };
 
 type CachedResult = ResearchResult;
@@ -322,7 +323,7 @@ export async function research(
     : null;
 
   if (cached && cached.rows.length > 0) {
-    return cached;
+    return { ...cached, cacheHit: true };
   }
 
   const result =
@@ -351,5 +352,5 @@ export async function research(
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
   persistRows(effectiveInput, result.rows);
 
-  return result;
+  return { ...result, cacheHit: false };
 }

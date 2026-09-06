@@ -6,6 +6,8 @@ import {
   fetchKeywordMetricsForList,
   type KeywordMetricRow,
 } from "@/server/lib/dataforseo";
+import { fetchCachedKeywordMetrics } from "@/server/features/research-ops/keywordMetricsCache";
+import { recordPaidResearchJob } from "@/server/features/research-ops/paidResearchRecorder";
 import { buildProjectMeta } from "@/server/mcp/context";
 import { mcpResponse } from "@/server/mcp/formatters";
 import {
@@ -389,7 +391,7 @@ const getKeywordMetricsInputSchema = {
     .boolean()
     .optional()
     .describe(
-      "Refine search volumes with clickstream data, which disaggregates Google Ads' grouped close-variant volumes (plurals/misspellings). DOUBLES the credit cost of the call. Default false. No effect for countries served from Google Ads data.",
+      "Refine search volumes with clickstream data, which disaggregates Google Ads' grouped close-variant volumes (plurals/misspellings). DOUBLES the credit cost of the call. OFF unless you pass true. No effect for countries served from Google Ads data.",
     ),
   sortBy: keywordMetricsSortSchema
     .optional()
@@ -1078,15 +1080,33 @@ export const getKeywordMetricsTool = {
     // location must validate against the project's default location.
     assertLanguageForLocation(locationCode, languageCode);
     const client = createDataforseoClient(context.billing);
-    const metrics = await fetchKeywordMetricsForList(client, {
-      keywords: args.keywords,
-      locationCode,
-      languageCode,
-      includeClickstreamData: args.includeClickstreamData ?? false,
-      creditFeature: "keyword_research",
-    });
+    const { rows: metricRows, cacheHit } = await fetchCachedKeywordMetrics(
+      {
+        organizationId: context.auth.organizationId,
+        projectId: args.projectId,
+        keywords: args.keywords,
+        locationCode,
+        languageCode,
+        includeClickstreamData: args.includeClickstreamData,
+      },
+      (params) =>
+        fetchKeywordMetricsForList(client, {
+          ...params,
+          creditFeature: "keyword_research",
+        }),
+    );
+    if (metricRows.length > 0) {
+      void recordPaidResearchJob({
+        projectId: args.projectId,
+        tool: "get_keyword_metrics",
+        providerCategory: "dataforseo_labs",
+        requestSize: metricRows.length,
+        cacheHit,
+        summary: `get_keyword_metrics: ${metricRows.length} keywords | ${locationCode}/${languageCode} | ${cacheHit ? "cache hit" : "cache miss"} | clickstream ${args.includeClickstreamData === true ? "on" : "off"}`,
+      });
+    }
     const rows = sortKeywordMetricRows(
-      metrics.map(toMcpKeywordMetricRow),
+      metricRows.map(toMcpKeywordMetricRow),
       args.sortBy ?? "search_volume",
     ).map((row) =>
       args.includeMonthlyTrends === false

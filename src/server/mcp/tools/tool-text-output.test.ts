@@ -63,6 +63,9 @@ vi.mock("@/server/features/projects/services/ProjectService", () => ({
 vi.mock("@/server/features/keywords/services/KeywordResearchService", () => ({
   KeywordResearchService: { research: mocks.research },
 }));
+vi.mock("@/server/features/research-ops/paidResearchRecorder", () => ({
+  recordPaidResearchJob: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/server/features/backlinks/services/BacklinksService", () => ({
   BacklinksService: {
     profileOverview: mocks.profileOverview,

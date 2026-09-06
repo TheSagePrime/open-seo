@@ -1,5 +1,6 @@
 import {
   index,
+  integer,
   primaryKey,
   sqliteTable,
   text,
@@ -113,6 +114,33 @@ export const projectResearchLog = sqliteTable(
     index("project_research_log_project_date_idx").on(
       table.projectId,
       table.entryDate,
+    ),
+  ],
+);
+
+// Simple per-project audit trail for paid research jobs. This is not a finance
+// ledger: one row per MCP research job with cache hit/miss and request size.
+export const projectResearchCostHistory = sqliteTable(
+  "project_research_cost_history",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    providerCategory: text("provider_category").notNull(),
+    requestSize: integer("request_size").notNull(),
+    cacheHit: integer("cache_hit").notNull(),
+    providerCostUsd: text("provider_cost_usd"),
+    creditsCharged: integer("credits_charged"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (table) => [
+    index("project_research_cost_history_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
     ),
   ],
 );

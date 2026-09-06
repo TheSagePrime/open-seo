@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { KeywordResearchService } from "@/server/features/keywords/services/KeywordResearchService";
+import { isClickstreamRequested } from "@/server/features/research-ops/clickstream";
+import { recordPaidResearchJob } from "@/server/features/research-ops/paidResearchRecorder";
+import { dedupeResearchSeeds } from "@/server/features/research-ops/seedDedupe";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { buildProjectMeta } from "@/server/mcp/context";
 import {
@@ -39,7 +42,7 @@ const inputSchema = {
     .boolean()
     .optional()
     .describe(
-      "Refine search volumes with clickstream data, which disaggregates Google Ads' grouped close-variant volumes (plurals/misspellings). DOUBLES the credit cost of each seed. Default false (standard Google-Ads-derived volumes). No effect for countries served from Google Ads data.",
+      "Refine search volumes with clickstream data, which disaggregates Google Ads' grouped close-variant volumes (plurals/misspellings). DOUBLES the credit cost of each seed. OFF unless you pass true. No effect for countries served from Google Ads data.",
     ),
 } as const;
 
@@ -104,8 +107,10 @@ export const researchKeywordsTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: Args, context) => {
+    const seeds = dedupeResearchSeeds(args.seeds);
+    const clickstream = isClickstreamRequested(args.includeClickstreamData);
     const results = await Promise.all(
-      args.seeds.map(async (item) => {
+      seeds.map(async (item) => {
         try {
           const { locationCode, languageCode } = resolveMarket(
             item,
@@ -120,7 +125,7 @@ export const researchKeywordsTool = {
               languageCode,
               resultLimit: args.resultLimit ?? 150,
               mode: "auto",
-              clickstream: args.includeClickstreamData ?? false,
+              clickstream,
             },
             context.billing,
           );
@@ -130,6 +135,7 @@ export const researchKeywordsTool = {
             rowCount: data.rows.length,
             source: data.source,
             usedFallback: data.usedFallback,
+            cacheHit: data.cacheHit === true,
             rows: data.rows,
           };
         } catch (error) {
@@ -142,7 +148,29 @@ export const researchKeywordsTool = {
       }),
     );
 
-    const okCount = results.filter((r) => r.ok).length;
+    const okResults = results.filter((result) => result.ok);
+    const cacheHit =
+      okResults.length > 0 && okResults.every((result) => result.cacheHit);
+    if (okResults.length > 0) {
+      const markets = [
+        ...new Set(
+          seeds.map((seed) => {
+            const market = resolveMarket(seed, context.project);
+            return `${market.locationCode}/${market.languageCode}`;
+          }),
+        ),
+      ].join(", ");
+      void recordPaidResearchJob({
+        projectId: args.projectId,
+        tool: "research_keywords",
+        providerCategory: "dataforseo_labs",
+        requestSize: seeds.length,
+        cacheHit,
+        summary: `research_keywords: ${okResults.map((result) => result.seed).join(", ")} | market ${markets} | ${cacheHit ? "cache hit" : "cache miss"} | clickstream ${clickstream ? "on" : "off"}`,
+      });
+    }
+
+    const okCount = okResults.length;
     const failCount = results.length - okCount;
     const text =
       results
