@@ -25,7 +25,7 @@ describe("providerCostRecorder", () => {
     mocks.insertCost.mockResolvedValue(undefined);
   });
 
-  it("derives the real DataForSEO source from the provider path", () => {
+  it("derives the real DataForSEO source from provider paths", () => {
     expect(
       dataforseoProviderCategory([
         "v3",
@@ -39,6 +39,10 @@ describe("providerCostRecorder", () => {
     expect(
       dataforseoProviderCategory(["v3", "backlinks", "summary", "live"]),
     ).toBe("dataforseo:backlinks");
+
+    expect(dataforseoProviderCategory(["backlinks", "summary"])).toBe(
+      "dataforseo:backlinks",
+    );
   });
 
   it("records the real provider cost and supplied credit charge", async () => {
