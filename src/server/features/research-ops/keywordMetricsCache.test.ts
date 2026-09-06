@@ -73,6 +73,25 @@ describe("fetchCachedKeywordMetrics", () => {
     expect(fetchLive.mock.calls[0]?.[0].keywords).toEqual(["linux vps"]);
   });
 
+  it("reuses a cached empty payload instead of repaying for no-result keywords", async () => {
+    fetchLive.mockResolvedValue([]);
+    const input = {
+      organizationId: "org_1",
+      projectId: "project_1",
+      keywords: ["sageprime cacheprobe"],
+      locationCode: 2840,
+      languageCode: "en",
+      includeClickstreamData: false,
+    };
+
+    const first = await fetchCachedKeywordMetrics(input, fetchLive);
+    const second = await fetchCachedKeywordMetrics(input, fetchLive);
+
+    expect(fetchLive).toHaveBeenCalledTimes(1);
+    expect(first).toEqual({ rows: [], cacheHit: false });
+    expect(second).toEqual({ rows: [], cacheHit: true });
+  });
+
   it("does not enable clickstream unless explicitly requested", async () => {
     await fetchCachedKeywordMetrics(
       {
