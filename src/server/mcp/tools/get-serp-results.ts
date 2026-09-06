@@ -83,6 +83,44 @@ const inputSchema = {
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
 
+async function findSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+}) {
+  try {
+    return await findLatestResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "get_serp_results",
+      request: params.request,
+    });
+  } catch (error) {
+    console.error("research-ops.snapshot.lookup failed:", error);
+    return null;
+  }
+}
+
+async function saveSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+  items: SerpItem[];
+}) {
+  try {
+    await saveResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "get_serp_results",
+      request: params.request,
+      payload: { items: params.items },
+      source: "serp.live",
+      providerCategory: "dataforseo_serp",
+      origin: "provider",
+    });
+  } catch (error) {
+    // Do not report a paid provider request as failed only because durable
+    // bookkeeping is temporarily unavailable.
+    console.error("research-ops.snapshot.persist failed:", error);
+  }
+}
+
 export const getSerpResultsTool = {
   name: "get_serp_results",
   config: {
@@ -133,9 +171,8 @@ export const getSerpResultsTool = {
           };
 
           if (args.refresh !== true) {
-            const snapshot = await findLatestResearchSnapshot({
+            const snapshot = await findSnapshotSafely({
               projectId: args.projectId,
-              researchType: "get_serp_results",
               request: snapshotRequest,
             });
             const parsed = serpSnapshotSchema.safeParse(snapshot?.payload);
@@ -163,14 +200,10 @@ export const getSerpResultsTool = {
             domain: item.domain ?? null,
             description: item.description ?? null,
           }));
-          await saveResearchSnapshot({
+          await saveSnapshotSafely({
             projectId: args.projectId,
-            researchType: "get_serp_results",
             request: snapshotRequest,
-            payload: { items: trimmed },
-            source: "serp.live",
-            providerCategory: "dataforseo_serp",
-            origin: "provider",
+            items: trimmed,
           });
           return {
             keyword: q.keyword,
