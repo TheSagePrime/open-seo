@@ -8,6 +8,7 @@ import {
   setCached,
 } from "@/server/lib/r2-cache";
 import { isClickstreamRequested } from "./clickstream";
+import { recordPaidResearchJob } from "./paidResearchRecorder";
 
 const CACHE_VERSION = 1;
 
@@ -48,6 +49,22 @@ export type KeywordMetricsCacheInput = {
   includeClickstreamData?: boolean | null;
 };
 
+function recordEmptyKeywordMetricsJob(
+  input: KeywordMetricsCacheInput,
+  keywords: string[],
+  includeClickstreamData: boolean,
+  cacheHit: boolean,
+): void {
+  void recordPaidResearchJob({
+    projectId: input.projectId,
+    tool: "get_keyword_metrics",
+    providerCategory: "dataforseo_labs",
+    requestSize: keywords.length,
+    cacheHit,
+    summary: `get_keyword_metrics: 0/${keywords.length} keywords returned | ${input.locationCode}/${input.languageCode} | ${cacheHit ? "cache hit" : "cache miss"} | clickstream ${includeClickstreamData ? "on" : "off"}`,
+  });
+}
+
 export async function fetchCachedKeywordMetrics(
   input: KeywordMetricsCacheInput,
   fetchLive: (params: KeywordMetricsLiveParams) => Promise<KeywordMetricRow[]>,
@@ -72,6 +89,14 @@ export async function fetchCachedKeywordMetrics(
 
   const cached = cachedMetricsSchema.safeParse(await getCached(cacheKey));
   if (cached.success) {
+    if (cached.data.rows.length === 0) {
+      recordEmptyKeywordMetricsJob(
+        input,
+        keywords,
+        includeClickstreamData,
+        true,
+      );
+    }
     return { rows: cached.data.rows, cacheHit: true };
   }
 
@@ -82,5 +107,13 @@ export async function fetchCachedKeywordMetrics(
     includeClickstreamData,
   });
   await setCached(cacheKey, { rows }, CACHE_TTL.keywordMetrics);
+  if (rows.length === 0) {
+    recordEmptyKeywordMetricsJob(
+      input,
+      keywords,
+      includeClickstreamData,
+      false,
+    );
+  }
   return { rows, cacheHit: false };
 }
