@@ -147,6 +147,27 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
   } as const;
 }
 
+async function recordProviderCostIfScoped(
+  customer: BillingCustomerContext,
+  billing: DataforseoApiCallCost,
+  hostedMode: boolean,
+) {
+  if (!customer.projectId || billing.costUsd <= 0) return;
+
+  const {
+    calculateOpenSeoCredits,
+    recordDataforseoProviderCost,
+  } = await import("@/server/features/research-ops/providerCostRecorder");
+
+  await recordDataforseoProviderCost({
+    projectId: customer.projectId,
+    billing,
+    creditsCharged: hostedMode
+      ? calculateOpenSeoCredits(billing.costUsd)
+      : null,
+  });
+}
+
 async function meterDataforseoCall<T>(
   customer: BillingCustomerContext,
   execute: () => Promise<DataforseoApiResponse<T>>,
@@ -155,8 +176,19 @@ async function meterDataforseoCall<T>(
   const isHostedMode = await isHostedServerAuthMode();
 
   if (!isHostedMode) {
-    const result = await execute();
-    return result.data;
+    try {
+      const result = await execute();
+      await recordProviderCostIfScoped(customer, result.billing, false);
+      return result.data;
+    } catch (error) {
+      if (
+        error instanceof DataforseoChargedTaskError &&
+        error.billing.costUsd > 0
+      ) {
+        await recordProviderCostIfScoped(customer, error.billing, false);
+      }
+      throw error;
+    }
   }
 
   const billingCustomer = await getOrCreateOrganizationCustomer(customer);
@@ -220,4 +252,6 @@ async function trackDataforseoCost(args: {
       fromCache: false,
     },
   });
+
+  await recordProviderCostIfScoped(args.customer, args.billing, true);
 }
