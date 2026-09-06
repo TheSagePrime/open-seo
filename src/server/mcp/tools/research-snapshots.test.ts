@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   researchSnapshotExists: vi.fn(),
   saveResearchSnapshot: vi.fn(),
   createDataforseoClient: vi.fn(),
-  saveApprovedKeyword: vi.fn(),
+  saveKeywords: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
@@ -24,9 +24,9 @@ vi.mock("@/server/features/research-ops/researchSnapshots", () => ({
 vi.mock("@/server/lib/dataforseo", () => ({
   createDataforseoClient: mocks.createDataforseoClient,
 }));
-vi.mock("@/server/features/keywords/repositories/SavedKeywordRepository", () => ({
-  SavedKeywordRepository: {
-    save: mocks.saveApprovedKeyword,
+vi.mock("@/server/features/keywords/services/KeywordResearchService", () => ({
+  KeywordResearchService: {
+    saveKeywords: mocks.saveKeywords,
   },
 }));
 
@@ -77,7 +77,7 @@ describe("backfill_research_snapshots", () => {
     );
 
     expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
-    expect(mocks.saveApprovedKeyword).not.toHaveBeenCalled();
+    expect(mocks.saveKeywords).not.toHaveBeenCalled();
     expect(mocks.saveResearchSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.saveResearchSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -105,7 +105,7 @@ describe("backfill_research_snapshots", () => {
 
     expect(mocks.saveResearchSnapshot).not.toHaveBeenCalled();
     expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
-    expect(mocks.saveApprovedKeyword).not.toHaveBeenCalled();
+    expect(mocks.saveKeywords).not.toHaveBeenCalled();
     expect(result.structuredContent).toEqual(
       expect.objectContaining({ imported: 0, skipped: 1 }),
     );
