@@ -27,8 +27,16 @@ const r2 = vi.hoisted(() => {
   };
 });
 
+const bookkeeping = vi.hoisted(() => ({
+  recordPaidResearchJob: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("cloudflare:workers", () => ({
   env: { R2: r2 },
+}));
+
+vi.mock("./paidResearchRecorder", () => ({
+  recordPaidResearchJob: bookkeeping.recordPaidResearchJob,
 }));
 
 import { fetchCachedKeywordMetrics } from "./keywordMetricsCache";
@@ -39,6 +47,8 @@ describe("fetchCachedKeywordMetrics", () => {
   beforeEach(() => {
     r2.store.clear();
     fetchLive.mockReset();
+    bookkeeping.recordPaidResearchJob.mockReset();
+    bookkeeping.recordPaidResearchJob.mockResolvedValue(undefined);
     fetchLive.mockResolvedValue([
       {
         keyword: "linux vps",
@@ -71,9 +81,10 @@ describe("fetchCachedKeywordMetrics", () => {
     expect(second.cacheHit).toBe(true);
     expect(second.rows).toEqual(first.rows);
     expect(fetchLive.mock.calls[0]?.[0].keywords).toEqual(["linux vps"]);
+    expect(bookkeeping.recordPaidResearchJob).not.toHaveBeenCalled();
   });
 
-  it("reuses a cached empty payload instead of repaying for no-result keywords", async () => {
+  it("reuses and records cached empty payloads without repaying for no-result keywords", async () => {
     fetchLive.mockResolvedValue([]);
     const input = {
       organizationId: "org_1",
@@ -90,6 +101,23 @@ describe("fetchCachedKeywordMetrics", () => {
     expect(fetchLive).toHaveBeenCalledTimes(1);
     expect(first).toEqual({ rows: [], cacheHit: false });
     expect(second).toEqual({ rows: [], cacheHit: true });
+    expect(bookkeeping.recordPaidResearchJob).toHaveBeenCalledTimes(2);
+    expect(bookkeeping.recordPaidResearchJob).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        tool: "get_keyword_metrics",
+        requestSize: 1,
+        cacheHit: false,
+      }),
+    );
+    expect(bookkeeping.recordPaidResearchJob).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        tool: "get_keyword_metrics",
+        requestSize: 1,
+        cacheHit: true,
+      }),
+    );
   });
 
   it("does not enable clickstream unless explicitly requested", async () => {
