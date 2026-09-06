@@ -72,6 +72,44 @@ function recordEmptyKeywordMetricsJob(
   });
 }
 
+async function findSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+}) {
+  try {
+    return await findLatestResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "get_keyword_metrics",
+      request: params.request,
+    });
+  } catch (error) {
+    console.error("research-ops.snapshot.lookup failed:", error);
+    return null;
+  }
+}
+
+async function saveSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+  payload: { rows: KeywordMetricRow[] };
+}) {
+  try {
+    await saveResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "get_keyword_metrics",
+      request: params.request,
+      payload: params.payload,
+      source: "keyword_overview/live",
+      providerCategory: "dataforseo_labs",
+      origin: "provider",
+    });
+  } catch (error) {
+    // The paid provider response remains successful. The short cache still
+    // prevents an immediate duplicate purchase while bookkeeping recovers.
+    console.error("research-ops.snapshot.persist failed:", error);
+  }
+}
+
 export async function fetchCachedKeywordMetrics(
   input: KeywordMetricsCacheInput,
   fetchLive: (params: KeywordMetricsLiveParams) => Promise<KeywordMetricRow[]>,
@@ -120,9 +158,8 @@ export async function fetchCachedKeywordMetrics(
       };
     }
 
-    const snapshot = await findLatestResearchSnapshot({
+    const snapshot = await findSnapshotSafely({
       projectId: input.projectId,
-      researchType: "get_keyword_metrics",
       request: snapshotRequest,
     });
     const snapshotMetrics = cachedMetricsSchema.safeParse(snapshot?.payload);
@@ -157,14 +194,10 @@ export async function fetchCachedKeywordMetrics(
   });
   const payload = { rows };
   await setCached(cacheKey, payload, CACHE_TTL.keywordMetrics);
-  await saveResearchSnapshot({
+  await saveSnapshotSafely({
     projectId: input.projectId,
-    researchType: "get_keyword_metrics",
     request: snapshotRequest,
     payload,
-    source: "keyword_overview/live",
-    providerCategory: "dataforseo_labs",
-    origin: "provider",
   });
   if (rows.length === 0) {
     recordEmptyKeywordMetricsJob(
