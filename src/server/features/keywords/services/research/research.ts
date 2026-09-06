@@ -8,6 +8,10 @@ import {
   setCached,
 } from "@/server/lib/r2-cache";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
+import {
+  findLatestResearchSnapshot,
+  saveResearchSnapshot,
+} from "@/server/features/research-ops/researchSnapshots";
 import type { KeywordResearchRow } from "@/types/keywords";
 import type { ResolvedResearchKeywordsInput } from "@/types/schemas/keywords";
 import { z } from "zod";
@@ -39,12 +43,15 @@ type ResearchDiagnostics = {
   sourceAttempts: SourceAttempt[];
 };
 
+export type ResearchReuseSource = "cache" | "snapshot" | "provider";
+
 type ResearchResult = {
   rows: KeywordResearchRow[];
   source: ResearchSource;
   usedFallback: boolean;
   diagnostics: ResearchDiagnostics;
   cacheHit?: boolean;
+  reuseSource?: ResearchReuseSource;
 };
 
 type CachedResult = ResearchResult;
@@ -242,6 +249,22 @@ async function fetchManualRows(
   };
 }
 
+function buildSnapshotRequest(
+  input: ResolvedResearchKeywordsInput,
+  normalizedKeywords: string[],
+  mode: KeywordMode,
+): Record<string, unknown> {
+  return {
+    keywords: normalizedKeywords,
+    locationCode: input.locationCode,
+    languageCode: input.languageCode,
+    resultLimit: input.resultLimit,
+    mode,
+    depth: 3,
+    clickstream: input.clickstream,
+  };
+}
+
 async function buildResearchCacheKey(
   input: ResolvedResearchKeywordsInput,
   normalizedKeywords: string[],
@@ -252,13 +275,7 @@ async function buildResearchCacheKey(
     cacheVersion: CACHE_VERSION,
     organizationId: billingCustomer.organizationId,
     projectId: input.projectId,
-    keywords: normalizedKeywords,
-    locationCode: input.locationCode,
-    languageCode: input.languageCode,
-    resultLimit: input.resultLimit,
-    mode,
-    depth: 3,
-    clickstream: input.clickstream,
+    ...buildSnapshotRequest(input, normalizedKeywords, mode),
   });
 }
 
@@ -290,6 +307,7 @@ export async function research(
   input: ResolvedResearchKeywordsInput,
   billingCustomer: BillingCustomerContext,
   creditFeature?: CreditFeature,
+  options: { refresh?: boolean } = {},
 ): Promise<ResearchResult> {
   const uniqueKeywords = [
     ...new Set(input.keywords.map(normalizeKeyword)),
@@ -303,7 +321,7 @@ export async function research(
   const provider = getKeywordDataProvider(input.locationCode);
   // Labs source modes and clickstream refinement don't exist for
   // Google-Ads-served countries; collapse both so equivalent requests share
-  // one cache entry.
+  // one cache/snapshot identity.
   const effectiveInput: ResolvedResearchKeywordsInput =
     provider === "google_ads"
       ? { ...input, mode: "auto", clickstream: false }
@@ -315,15 +333,42 @@ export async function research(
     mode,
     billingCustomer,
   );
+  const snapshotRequest = buildSnapshotRequest(
+    effectiveInput,
+    uniqueKeywords,
+    mode,
+  );
 
-  const cachedRaw = await getCached(cacheKey);
-  const cachedResult = cachedResultSchema.safeParse(cachedRaw);
-  const cached: CachedResult | null = cachedResult.success
-    ? cachedResult.data
-    : null;
+  if (!options.refresh) {
+    const cachedRaw = await getCached(cacheKey);
+    const cachedResult = cachedResultSchema.safeParse(cachedRaw);
+    const cached: CachedResult | null = cachedResult.success
+      ? cachedResult.data
+      : null;
 
-  if (cached && cached.rows.length > 0) {
-    return { ...cached, cacheHit: true };
+    if (cached) {
+      return { ...cached, cacheHit: true, reuseSource: "cache" };
+    }
+
+    const snapshot = await findLatestResearchSnapshot({
+      projectId: input.projectId,
+      researchType: "research_keywords",
+      request: snapshotRequest,
+    });
+    const snapshotResult = cachedResultSchema.safeParse(snapshot?.payload);
+    if (snapshotResult.success) {
+      await setCached(
+        cacheKey,
+        snapshotResult.data,
+        CACHE_TTL.researchResult,
+      );
+      persistRows(effectiveInput, snapshotResult.data.rows);
+      return {
+        ...snapshotResult.data,
+        cacheHit: false,
+        reuseSource: "snapshot",
+      };
+    }
   }
 
   const result =
@@ -350,7 +395,16 @@ export async function research(
           );
 
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
+  await saveResearchSnapshot({
+    projectId: input.projectId,
+    researchType: "research_keywords",
+    request: snapshotRequest,
+    payload: result,
+    source: result.source,
+    providerCategory: "dataforseo",
+    origin: "provider",
+  });
   persistRows(effectiveInput, result.rows);
 
-  return { ...result, cacheHit: false };
+  return { ...result, cacheHit: false, reuseSource: "provider" };
 }
