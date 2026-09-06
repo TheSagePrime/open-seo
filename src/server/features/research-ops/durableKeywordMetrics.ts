@@ -9,7 +9,9 @@ const QUERY_CHUNK_SIZE = 80;
 
 type DurableKeywordMetricRecord = typeof keywordMetrics.$inferSelect;
 
-function parseMonthlySearches(value: string | null): KeywordMetricRow["monthlySearches"] {
+function parseMonthlySearches(
+  value: string | null,
+): KeywordMetricRow["monthlySearches"] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;

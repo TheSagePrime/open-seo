@@ -172,7 +172,9 @@ export async function fetchCachedKeywordMetrics(
 }> {
   const keywords = [
     ...new Set(
-      input.keywords.map(normalizeKeyword).filter((keyword) => keyword.length > 0),
+      input.keywords
+        .map(normalizeKeyword)
+        .filter((keyword) => keyword.length > 0),
     ),
   ].sort();
   const includeClickstreamData = isClickstreamRequested(
@@ -216,11 +218,7 @@ export async function fetchCachedKeywordMetrics(
     });
     const snapshotMetrics = cachedMetricsSchema.safeParse(snapshot?.payload);
     if (snapshotMetrics.success) {
-      await setCached(
-        cacheKey,
-        snapshotMetrics.data,
-        CACHE_TTL.keywordMetrics,
-      );
+      await setCached(cacheKey, snapshotMetrics.data, CACHE_TTL.keywordMetrics);
       if (snapshotMetrics.data.rows.length === 0) {
         recordEmptyKeywordMetricsJob(
           input,
@@ -254,7 +252,10 @@ export async function fetchCachedKeywordMetrics(
         (keyword) => !durableKeywords.has(keyword),
       );
 
-      if (missingKeywords.length === 0 && durableRows.length === keywords.length) {
+      if (
+        missingKeywords.length === 0 &&
+        durableRows.length === keywords.length
+      ) {
         const payload = { rows: mergeMetricRows(keywords, durableRows, []) };
         await setCached(cacheKey, payload, CACHE_TTL.keywordMetrics);
         return {

@@ -394,11 +394,7 @@ export async function research(
     });
     const snapshotResult = cachedResultSchema.safeParse(snapshot?.payload);
     if (snapshotResult.success) {
-      await setCached(
-        cacheKey,
-        snapshotResult.data,
-        CACHE_TTL.researchResult,
-      );
+      await setCached(cacheKey, snapshotResult.data, CACHE_TTL.researchResult);
       persistRows(effectiveInput, snapshotResult.data.rows);
       return {
         ...snapshotResult.data,

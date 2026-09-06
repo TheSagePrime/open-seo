@@ -124,7 +124,9 @@ describe("fetchCachedKeywordMetrics", () => {
     });
     expect(fetchLive.mock.calls[0]?.[0].keywords).toEqual(["linux vps"]);
     expect(snapshots.saveResearchSnapshot).toHaveBeenCalledTimes(1);
-    expect(durableMetrics.persistDurableKeywordMetrics).toHaveBeenCalledTimes(1);
+    expect(durableMetrics.persistDurableKeywordMetrics).toHaveBeenCalledTimes(
+      1,
+    );
     expect(bookkeeping.recordPaidResearchJob).not.toHaveBeenCalled();
   });
 
@@ -297,7 +299,10 @@ describe("fetchCachedKeywordMetrics", () => {
 
     expect(durableMetrics.loadDurableKeywordMetrics).not.toHaveBeenCalled();
     expect(fetchLive).toHaveBeenCalledWith(
-      expect.objectContaining({ includeClickstreamData: true, keywords: ["rdp"] }),
+      expect.objectContaining({
+        includeClickstreamData: true,
+        keywords: ["rdp"],
+      }),
     );
   });
 
@@ -314,7 +319,10 @@ describe("fetchCachedKeywordMetrics", () => {
     );
 
     expect(fetchLive).toHaveBeenCalledWith(
-      expect.objectContaining({ includeClickstreamData: false, keywords: ["rdp"] }),
+      expect.objectContaining({
+        includeClickstreamData: false,
+        keywords: ["rdp"],
+      }),
     );
   });
 });

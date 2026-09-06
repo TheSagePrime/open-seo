@@ -90,7 +90,9 @@ describe("recordPaidResearchJob", () => {
   });
 
   it("does not fail research when bookkeeping fails", async () => {
-    mocks.applyContextUpdates.mockRejectedValueOnce(new Error("db unavailable"));
+    mocks.applyContextUpdates.mockRejectedValueOnce(
+      new Error("db unavailable"),
+    );
 
     await expect(
       recordPaidResearchJob({

@@ -25,11 +25,14 @@ vi.mock("@/server/features/research-ops/researchSnapshots", () => ({
   findLatestResearchSnapshot: mocks.findLatestResearchSnapshot,
   saveResearchSnapshot: mocks.saveResearchSnapshot,
 }));
-vi.mock("@/server/features/keywords/repositories/KeywordResearchRepository", () => ({
-  KeywordResearchRepository: {
-    upsertKeywordMetric: mocks.upsertKeywordMetric,
-  },
-}));
+vi.mock(
+  "@/server/features/keywords/repositories/KeywordResearchRepository",
+  () => ({
+    KeywordResearchRepository: {
+      upsertKeywordMetric: mocks.upsertKeywordMetric,
+    },
+  }),
+);
 vi.mock("./research-data", () => ({
   fetchResearchRowsBySource: mocks.fetchResearchRowsBySource,
   fetchGoogleAdsResearchRows: mocks.fetchGoogleAdsResearchRows,

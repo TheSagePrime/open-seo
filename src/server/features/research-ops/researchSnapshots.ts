@@ -149,7 +149,10 @@ export async function saveResearchSnapshot(
   input: ResearchSnapshotInput,
 ): Promise<{ id: string; requestHash: string }> {
   const request = canonicalResearchRequest(input.request);
-  const requestHash = await buildResearchSnapshotHash(input.researchType, request);
+  const requestHash = await buildResearchSnapshotHash(
+    input.researchType,
+    request,
+  );
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   await db.insert(projectResearchSnapshots).values({

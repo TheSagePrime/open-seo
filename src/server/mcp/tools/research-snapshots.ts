@@ -76,7 +76,9 @@ const researchKeywordsBackfillSchema = z.object({
   seed: z.string().min(1),
   locationCode: locationCodeSchema,
   languageCode: languageCodeSchema,
-  resultLimit: z.union([z.literal(150), z.literal(300), z.literal(500)]).optional(),
+  resultLimit: z
+    .union([z.literal(150), z.literal(300), z.literal(500)])
+    .optional(),
   mode: z.enum(["auto", "related", "suggestions", "ideas"]).optional(),
   clickstream: z.boolean().optional(),
   source: z.enum(["related", "suggestions", "ideas", "google_ads"]),
@@ -121,7 +123,9 @@ const listInputSchema = {
   includePayload: z
     .boolean()
     .optional()
-    .describe("Include stored payloads. Defaults to false to keep responses small."),
+    .describe(
+      "Include stored payloads. Defaults to false to keep responses small.",
+    ),
 } as const;
 
 type ListArgs = z.infer<z.ZodObject<typeof listInputSchema>>;
@@ -144,10 +148,13 @@ export const listResearchSnapshotsTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: ListArgs, context) => {
-    const snapshots = (await listResearchSnapshots(args.projectId, args.limit ?? 100))
+    const snapshots = (
+      await listResearchSnapshots(args.projectId, args.limit ?? 100)
+    )
       .filter(
         (snapshot) =>
-          args.researchType == null || snapshot.researchType === args.researchType,
+          args.researchType == null ||
+          snapshot.researchType === args.researchType,
       )
       .map((snapshot) => ({
         id: snapshot.id,
@@ -184,7 +191,9 @@ const backfillInputSchema = {
 
 type BackfillArgs = z.infer<z.ZodObject<typeof backfillInputSchema>>;
 
-function researchKeywordsSnapshot(item: z.infer<typeof researchKeywordsBackfillSchema>) {
+function researchKeywordsSnapshot(
+  item: z.infer<typeof researchKeywordsBackfillSchema>,
+) {
   const seed = normalizeKeyword(item.seed);
   const mode = item.mode ?? "auto";
   const request = {
@@ -224,7 +233,9 @@ function researchKeywordsSnapshot(item: z.infer<typeof researchKeywordsBackfillS
   };
 }
 
-function keywordMetricsSnapshot(item: z.infer<typeof keywordMetricsBackfillSchema>) {
+function keywordMetricsSnapshot(
+  item: z.infer<typeof keywordMetricsBackfillSchema>,
+) {
   return {
     researchType: item.kind,
     request: {
