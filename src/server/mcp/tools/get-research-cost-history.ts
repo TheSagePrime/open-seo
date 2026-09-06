@@ -37,7 +37,7 @@ export const getResearchCostHistoryTool = {
   config: {
     title: "Get research cost history",
     description:
-      "Lists recent paid research jobs for a project (tool, request size, cache hit/miss, timestamp). Uses no credits. Use this to see whether a keyword job already ran before buying it again.",
+      "Lists recent project-level DataForSEO spend and zero-cost cache reuse events. Provider rows include the actual DataForSEO path and USD cost; hosted mode also records OpenSEO credits. Uses no credits.",
     inputSchema,
     outputSchema: {
       jobs: z.array(looseObjectOutputSchema),
