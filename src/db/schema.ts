@@ -84,6 +84,7 @@ export const {
   projectCompetitors,
   projectKeyPages,
   projectResearchLog,
+  projectResearchCostHistory,
   audits,
   auditPages,
   auditIssues,

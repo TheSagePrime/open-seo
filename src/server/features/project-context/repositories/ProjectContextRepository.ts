@@ -5,6 +5,7 @@ import {
   projectCompetitors,
   projectContextSections,
   projectKeyPages,
+  projectResearchCostHistory,
   projectResearchLog,
 } from "@/db/schema";
 import type {
@@ -266,6 +267,37 @@ function pruneResearchLogBefore(tx: Tx, projectId: string, entryDate: string) {
     );
 }
 
+async function insertResearchCost(params: {
+  projectId: string;
+  tool: string;
+  providerCategory: string;
+  requestSize: number;
+  cacheHit: boolean;
+  providerCostUsd: string | null;
+  creditsCharged: number | null;
+}) {
+  await db.insert(projectResearchCostHistory).values({
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    projectId: params.projectId,
+    tool: params.tool,
+    providerCategory: params.providerCategory,
+    requestSize: params.requestSize,
+    cacheHit: params.cacheHit ? 1 : 0,
+    providerCostUsd: params.providerCostUsd,
+    creditsCharged: params.creditsCharged,
+  });
+}
+
+async function listResearchCosts(projectId: string, limit = 50) {
+  return db
+    .select()
+    .from(projectResearchCostHistory)
+    .where(eq(projectResearchCostHistory.projectId, projectId))
+    .orderBy(desc(projectResearchCostHistory.createdAt))
+    .limit(limit);
+}
+
 export const ProjectContextRepository = {
   listSections,
   upsertSection,
@@ -280,4 +312,6 @@ export const ProjectContextRepository = {
   appendResearchLogEntry,
   deleteResearchLogEntries,
   pruneResearchLogBefore,
+  insertResearchCost,
+  listResearchCosts,
 } as const;

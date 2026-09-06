@@ -30,6 +30,9 @@ vi.mock("@/server/features/projects/services/ProjectService", () => ({
     getProjectForOrganization: mocks.getProjectForOrganization,
   },
 }));
+vi.mock("@/server/features/research-ops/paidResearchRecorder", () => ({
+  recordPaidResearchJob: vi.fn().mockResolvedValue(undefined),
+}));
 
 const toolContext = makeToolContext();
 

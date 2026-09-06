@@ -7,6 +7,8 @@ import { sortBy } from "remeda";
 export const CACHE_TTL = {
   /** Related keyword research results */
   researchResult: 86400,
+  /** Hydrated keyword metrics (get_keyword_metrics) */
+  keywordMetrics: 12 * 60 * 60,
 } as const;
 
 const CACHE_PREFIX = "dataforseo-cache/";
@@ -38,8 +40,14 @@ export async function buildCacheKey(
  * Callers should validate the shape with Zod before trusting it — schema
  * drift between writes and reads is otherwise silent.
  */
+function r2Bucket(): R2Bucket | undefined {
+  return env.R2;
+}
+
 export async function getCached(key: string): Promise<unknown> {
-  const obj = await env.R2.get(`${CACHE_PREFIX}${key}`);
+  const bucket = r2Bucket();
+  if (!bucket) return null;
+  const obj = await bucket.get(`${CACHE_PREFIX}${key}`);
   if (!obj) return null;
 
   const expiresAt = obj.customMetadata?.expiresAt;
@@ -61,7 +69,9 @@ export async function setCached<T>(
   ttlSeconds: number,
   metadata: Record<string, string> = {},
 ): Promise<void> {
-  await env.R2.put(`${CACHE_PREFIX}${key}`, JSON.stringify(data), {
+  const bucket = r2Bucket();
+  if (!bucket) return;
+  await bucket.put(`${CACHE_PREFIX}${key}`, JSON.stringify(data), {
     httpMetadata: { contentType: "application/json" },
     customMetadata: {
       ...metadata,

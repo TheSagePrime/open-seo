@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -108,6 +109,29 @@ export const projectResearchLog = pgTable(
     index("project_research_log_project_date_idx").on(
       table.projectId,
       table.entryDate,
+    ),
+  ],
+);
+
+export const projectResearchCostHistory = pgTable(
+  "project_research_cost_history",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    providerCategory: text("provider_category").notNull(),
+    requestSize: integer("request_size").notNull(),
+    cacheHit: integer("cache_hit").notNull(),
+    providerCostUsd: text("provider_cost_usd"),
+    creditsCharged: integer("credits_charged"),
+    createdAt: text("created_at").notNull().default(isoNow),
+  },
+  (table) => [
+    index("project_research_cost_history_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
     ),
   ],
 );
