@@ -36,6 +36,11 @@ const snapshots = vi.hoisted(() => ({
   saveResearchSnapshot: vi.fn(),
 }));
 
+const durableMetrics = vi.hoisted(() => ({
+  loadDurableKeywordMetrics: vi.fn(),
+  persistDurableKeywordMetrics: vi.fn(),
+}));
+
 vi.mock("cloudflare:workers", () => ({
   env: { R2: r2 },
 }));
@@ -47,6 +52,11 @@ vi.mock("./paidResearchRecorder", () => ({
 vi.mock("./researchSnapshots", () => ({
   findLatestResearchSnapshot: snapshots.findLatestResearchSnapshot,
   saveResearchSnapshot: snapshots.saveResearchSnapshot,
+}));
+
+vi.mock("./durableKeywordMetrics", () => ({
+  loadDurableKeywordMetrics: durableMetrics.loadDurableKeywordMetrics,
+  persistDurableKeywordMetrics: durableMetrics.persistDurableKeywordMetrics,
 }));
 
 import { fetchCachedKeywordMetrics } from "./keywordMetricsCache";
@@ -63,6 +73,11 @@ describe("fetchCachedKeywordMetrics", () => {
     intent: "commercial",
     monthlySearches: [],
   };
+  const windowsMetricRow = {
+    ...metricRow,
+    keyword: "windows vps",
+    searchVolume: 200,
+  };
 
   beforeEach(() => {
     r2.store.clear();
@@ -76,6 +91,10 @@ describe("fetchCachedKeywordMetrics", () => {
       id: "snapshot_1",
       requestHash: "hash_1",
     });
+    durableMetrics.loadDurableKeywordMetrics.mockReset();
+    durableMetrics.loadDurableKeywordMetrics.mockResolvedValue([]);
+    durableMetrics.persistDurableKeywordMetrics.mockReset();
+    durableMetrics.persistDurableKeywordMetrics.mockResolvedValue(undefined);
     fetchLive.mockResolvedValue([metricRow]);
   });
 
@@ -105,6 +124,7 @@ describe("fetchCachedKeywordMetrics", () => {
     });
     expect(fetchLive.mock.calls[0]?.[0].keywords).toEqual(["linux vps"]);
     expect(snapshots.saveResearchSnapshot).toHaveBeenCalledTimes(1);
+    expect(durableMetrics.persistDurableKeywordMetrics).toHaveBeenCalledTimes(1);
     expect(bookkeeping.recordPaidResearchJob).not.toHaveBeenCalled();
   });
 
@@ -135,7 +155,59 @@ describe("fetchCachedKeywordMetrics", () => {
       reuseSource: "cache",
     });
     expect(fetchLive).not.toHaveBeenCalled();
+    expect(durableMetrics.loadDurableKeywordMetrics).not.toHaveBeenCalled();
     expect(snapshots.saveResearchSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("reuses old per-keyword DB metrics even when the original batch shape is gone", async () => {
+    durableMetrics.loadDurableKeywordMetrics.mockResolvedValue([metricRow]);
+
+    const result = await fetchCachedKeywordMetrics(
+      {
+        organizationId: "org_1",
+        projectId: "project_1",
+        keywords: ["Linux VPS"],
+        locationCode: 2840,
+        languageCode: "en",
+      },
+      fetchLive,
+    );
+
+    expect(result).toEqual({
+      rows: [metricRow],
+      cacheHit: true,
+      reuseSource: "database",
+    });
+    expect(fetchLive).not.toHaveBeenCalled();
+  });
+
+  it("buys only missing keywords when part of a metrics batch already exists durably", async () => {
+    durableMetrics.loadDurableKeywordMetrics.mockResolvedValue([metricRow]);
+    fetchLive.mockResolvedValue([windowsMetricRow]);
+
+    const result = await fetchCachedKeywordMetrics(
+      {
+        organizationId: "org_1",
+        projectId: "project_1",
+        keywords: ["Windows VPS", "Linux VPS"],
+        locationCode: 2840,
+        languageCode: "en",
+      },
+      fetchLive,
+    );
+
+    expect(fetchLive).toHaveBeenCalledTimes(1);
+    expect(fetchLive).toHaveBeenCalledWith(
+      expect.objectContaining({ keywords: ["windows vps"] }),
+    );
+    expect(result.rows.map((row) => row.keyword)).toEqual([
+      "linux vps",
+      "windows vps",
+    ]);
+    expect(result.reuseSource).toBe("provider");
+    expect(durableMetrics.persistDurableKeywordMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ rows: [windowsMetricRow] }),
+    );
   });
 
   it("reuses and records cached empty payloads without repaying for no-result keywords", async () => {
@@ -183,10 +255,11 @@ describe("fetchCachedKeywordMetrics", () => {
     );
   });
 
-  it("bypasses cache and snapshots when refresh is explicitly requested", async () => {
+  it("bypasses cache, snapshots, and durable DB metrics when refresh is explicitly requested", async () => {
     snapshots.findLatestResearchSnapshot.mockResolvedValue({
       payload: { rows: [metricRow] },
     });
+    durableMetrics.loadDurableKeywordMetrics.mockResolvedValue([metricRow]);
 
     const result = await fetchCachedKeywordMetrics(
       {
@@ -203,7 +276,29 @@ describe("fetchCachedKeywordMetrics", () => {
     expect(result.reuseSource).toBe("provider");
     expect(fetchLive).toHaveBeenCalledTimes(1);
     expect(snapshots.findLatestResearchSnapshot).not.toHaveBeenCalled();
+    expect(durableMetrics.loadDurableKeywordMetrics).not.toHaveBeenCalled();
     expect(snapshots.saveResearchSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use legacy DB metrics for clickstream-refined requests", async () => {
+    durableMetrics.loadDurableKeywordMetrics.mockResolvedValue([metricRow]);
+
+    await fetchCachedKeywordMetrics(
+      {
+        organizationId: "org_1",
+        projectId: "project_1",
+        keywords: ["rdp"],
+        locationCode: 2840,
+        languageCode: "en",
+        includeClickstreamData: true,
+      },
+      fetchLive,
+    );
+
+    expect(durableMetrics.loadDurableKeywordMetrics).not.toHaveBeenCalled();
+    expect(fetchLive).toHaveBeenCalledWith(
+      expect.objectContaining({ includeClickstreamData: true, keywords: ["rdp"] }),
+    );
   });
 
   it("does not enable clickstream unless explicitly requested", async () => {
