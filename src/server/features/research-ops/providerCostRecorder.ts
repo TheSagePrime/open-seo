@@ -12,7 +12,8 @@ export function calculateOpenSeoCredits(providerCostUsd: number): number {
 }
 
 export function dataforseoProviderCategory(path: string[]): string {
-  const category = path[1] ?? path[0] ?? "unknown";
+  const normalized = path[0] === "v3" ? path.slice(1) : path;
+  const category = normalized[0] ?? "unknown";
   return `dataforseo:${category}`;
 }
 
