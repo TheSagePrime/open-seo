@@ -9,6 +9,10 @@ import {
 } from "@/server/lib/r2-cache";
 import { isClickstreamRequested } from "./clickstream";
 import { recordPaidResearchJob } from "./paidResearchRecorder";
+import {
+  findLatestResearchSnapshot,
+  saveResearchSnapshot,
+} from "./researchSnapshots";
 
 const CACHE_VERSION = 1;
 
@@ -47,6 +51,7 @@ export type KeywordMetricsCacheInput = {
   locationCode: number;
   languageCode: string;
   includeClickstreamData?: boolean | null;
+  refresh?: boolean;
 };
 
 function recordEmptyKeywordMetricsJob(
@@ -54,6 +59,7 @@ function recordEmptyKeywordMetricsJob(
   keywords: string[],
   includeClickstreamData: boolean,
   cacheHit: boolean,
+  reuseSource?: "cache" | "snapshot",
 ): void {
   void recordPaidResearchJob({
     projectId: input.projectId,
@@ -61,14 +67,19 @@ function recordEmptyKeywordMetricsJob(
     providerCategory: "dataforseo_labs",
     requestSize: keywords.length,
     cacheHit,
-    summary: `get_keyword_metrics: 0/${keywords.length} keywords returned | ${input.locationCode}/${input.languageCode} | ${cacheHit ? "cache hit" : "cache miss"} | clickstream ${includeClickstreamData ? "on" : "off"}`,
+    reuseSource,
+    summary: `get_keyword_metrics: 0/${keywords.length} keywords returned | ${input.locationCode}/${input.languageCode} | ${cacheHit ? `${reuseSource ?? "cache"} reuse` : input.refresh === true ? "explicit refresh" : "provider research"} | clickstream ${includeClickstreamData ? "on" : "off"}`,
   });
 }
 
 export async function fetchCachedKeywordMetrics(
   input: KeywordMetricsCacheInput,
   fetchLive: (params: KeywordMetricsLiveParams) => Promise<KeywordMetricRow[]>,
-): Promise<{ rows: KeywordMetricRow[]; cacheHit: boolean }> {
+): Promise<{
+  rows: KeywordMetricRow[];
+  cacheHit: boolean;
+  reuseSource: "cache" | "snapshot" | "provider";
+}> {
   const keywords = [
     ...new Set(
       input.keywords.map(normalizeKeyword).filter((keyword) => keyword.length > 0),
@@ -77,27 +88,65 @@ export async function fetchCachedKeywordMetrics(
   const includeClickstreamData = isClickstreamRequested(
     input.includeClickstreamData,
   );
-  const cacheKey = await buildCacheKey("kw:metrics", {
-    cacheVersion: CACHE_VERSION,
-    organizationId: input.organizationId,
-    projectId: input.projectId,
+  const snapshotRequest = {
     keywords,
     locationCode: input.locationCode,
     languageCode: input.languageCode,
     clickstream: includeClickstreamData,
+  };
+  const cacheKey = await buildCacheKey("kw:metrics", {
+    cacheVersion: CACHE_VERSION,
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+    ...snapshotRequest,
   });
 
-  const cached = cachedMetricsSchema.safeParse(await getCached(cacheKey));
-  if (cached.success) {
-    if (cached.data.rows.length === 0) {
-      recordEmptyKeywordMetricsJob(
-        input,
-        keywords,
-        includeClickstreamData,
-        true,
-      );
+  if (input.refresh !== true) {
+    const cached = cachedMetricsSchema.safeParse(await getCached(cacheKey));
+    if (cached.success) {
+      if (cached.data.rows.length === 0) {
+        recordEmptyKeywordMetricsJob(
+          input,
+          keywords,
+          includeClickstreamData,
+          true,
+          "cache",
+        );
+      }
+      return {
+        rows: cached.data.rows,
+        cacheHit: true,
+        reuseSource: "cache",
+      };
     }
-    return { rows: cached.data.rows, cacheHit: true };
+
+    const snapshot = await findLatestResearchSnapshot({
+      projectId: input.projectId,
+      researchType: "get_keyword_metrics",
+      request: snapshotRequest,
+    });
+    const snapshotMetrics = cachedMetricsSchema.safeParse(snapshot?.payload);
+    if (snapshotMetrics.success) {
+      await setCached(
+        cacheKey,
+        snapshotMetrics.data,
+        CACHE_TTL.keywordMetrics,
+      );
+      if (snapshotMetrics.data.rows.length === 0) {
+        recordEmptyKeywordMetricsJob(
+          input,
+          keywords,
+          includeClickstreamData,
+          true,
+          "snapshot",
+        );
+      }
+      return {
+        rows: snapshotMetrics.data.rows,
+        cacheHit: true,
+        reuseSource: "snapshot",
+      };
+    }
   }
 
   const rows = await fetchLive({
@@ -106,7 +155,17 @@ export async function fetchCachedKeywordMetrics(
     languageCode: input.languageCode,
     includeClickstreamData,
   });
-  await setCached(cacheKey, { rows }, CACHE_TTL.keywordMetrics);
+  const payload = { rows };
+  await setCached(cacheKey, payload, CACHE_TTL.keywordMetrics);
+  await saveResearchSnapshot({
+    projectId: input.projectId,
+    researchType: "get_keyword_metrics",
+    request: snapshotRequest,
+    payload,
+    source: "keyword_overview/live",
+    providerCategory: "dataforseo_labs",
+    origin: "provider",
+  });
   if (rows.length === 0) {
     recordEmptyKeywordMetricsJob(
       input,
@@ -115,5 +174,5 @@ export async function fetchCachedKeywordMetrics(
       false,
     );
   }
-  return { rows, cacheHit: false };
+  return { rows, cacheHit: false, reuseSource: "provider" };
 }
