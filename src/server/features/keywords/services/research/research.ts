@@ -43,7 +43,7 @@ type ResearchDiagnostics = {
   sourceAttempts: SourceAttempt[];
 };
 
-export type ResearchReuseSource = "cache" | "snapshot" | "provider";
+type ResearchReuseSource = "cache" | "snapshot" | "provider";
 
 type ResearchResult = {
   rows: KeywordResearchRow[];
@@ -303,6 +303,44 @@ function persistRows(
   });
 }
 
+async function findSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+}) {
+  try {
+    return await findLatestResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "research_keywords",
+      request: params.request,
+    });
+  } catch (error) {
+    console.error("research-ops.snapshot.lookup failed:", error);
+    return null;
+  }
+}
+
+async function saveSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+  result: ResearchResult;
+}) {
+  try {
+    await saveResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "research_keywords",
+      request: params.request,
+      payload: params.result,
+      source: params.result.source,
+      providerCategory: "dataforseo",
+      origin: "provider",
+    });
+  } catch (error) {
+    // A paid provider response stays successful even if durable bookkeeping is
+    // temporarily unavailable. The short cache still protects immediate retry.
+    console.error("research-ops.snapshot.persist failed:", error);
+  }
+}
+
 export async function research(
   input: ResolvedResearchKeywordsInput,
   billingCustomer: BillingCustomerContext,
@@ -350,9 +388,8 @@ export async function research(
       return { ...cached, cacheHit: true, reuseSource: "cache" };
     }
 
-    const snapshot = await findLatestResearchSnapshot({
+    const snapshot = await findSnapshotSafely({
       projectId: input.projectId,
-      researchType: "research_keywords",
       request: snapshotRequest,
     });
     const snapshotResult = cachedResultSchema.safeParse(snapshot?.payload);
@@ -395,14 +432,10 @@ export async function research(
           );
 
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
-  await saveResearchSnapshot({
+  await saveSnapshotSafely({
     projectId: input.projectId,
-    researchType: "research_keywords",
     request: snapshotRequest,
-    payload: result,
-    source: result.source,
-    providerCategory: "dataforseo",
-    origin: "provider",
+    result,
   });
   persistRows(effectiveInput, result.rows);
 
