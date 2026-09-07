@@ -1,3 +1,4 @@
+import { sortBy } from "remeda";
 import { z } from "zod";
 import { normalizeKeyword } from "@/server/features/keywords/services/research/helpers";
 import type { KeywordMetricRow } from "@/server/lib/dataforseo/keyword-metrics";
@@ -170,13 +171,16 @@ export async function fetchCachedKeywordMetrics(
   cacheHit: boolean;
   reuseSource: MetricReuseSource;
 }> {
-  const keywords = [
-    ...new Set(
-      input.keywords
-        .map(normalizeKeyword)
-        .filter((keyword) => keyword.length > 0),
-    ),
-  ].sort();
+  const keywords = sortBy(
+    [
+      ...new Set(
+        input.keywords
+          .map(normalizeKeyword)
+          .filter((keyword) => keyword.length > 0),
+      ),
+    ],
+    (keyword) => keyword,
+  );
   const includeClickstreamData = isClickstreamRequested(
     input.includeClickstreamData,
   );
