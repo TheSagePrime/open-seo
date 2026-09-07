@@ -122,7 +122,9 @@ describe("fetchCachedKeywordMetrics", () => {
       cacheHit: true,
       reuseSource: "cache",
     });
-    expect(fetchLive.mock.calls[0]?.[0].keywords).toEqual(["linux vps"]);
+    expect(fetchLive).toHaveBeenCalledWith(
+      expect.objectContaining({ keywords: ["linux vps"] }),
+    );
     expect(snapshots.saveResearchSnapshot).toHaveBeenCalledTimes(1);
     expect(durableMetrics.persistDurableKeywordMetrics).toHaveBeenCalledTimes(
       1,
