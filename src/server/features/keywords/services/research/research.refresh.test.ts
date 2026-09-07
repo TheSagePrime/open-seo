@@ -42,7 +42,7 @@ vi.mock("@/shared/keyword-locations", () => ({
 }));
 
 describe("keyword research explicit refresh", () => {
-  const input = {
+  const input: ResolvedResearchKeywordsInput = {
     projectId: "project_1",
     keywords: ["Linux VPS"],
     locationCode: 2840,
@@ -50,10 +50,12 @@ describe("keyword research explicit refresh", () => {
     resultLimit: 150,
     mode: "related",
     clickstream: false,
-  } as ResolvedResearchKeywordsInput;
-  const billingCustomer = {
+  };
+  const billingCustomer: BillingCustomerContext = {
     organizationId: "org_1",
-  } as BillingCustomerContext;
+    userEmail: "test@example.com",
+    userId: "user_1",
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
