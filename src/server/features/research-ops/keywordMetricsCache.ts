@@ -41,14 +41,14 @@ const cachedMetricsSchema = z.object({
   rows: z.array(keywordMetricRowSchema),
 });
 
-export type KeywordMetricsLiveParams = {
+type KeywordMetricsLiveParams = {
   keywords: string[];
   locationCode: number;
   languageCode: string;
   includeClickstreamData: boolean;
 };
 
-export type KeywordMetricsCacheInput = {
+type KeywordMetricsCacheInput = {
   organizationId: string;
   projectId: string;
   keywords: string[];

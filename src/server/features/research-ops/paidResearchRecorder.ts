@@ -2,7 +2,7 @@ import { waitUntil } from "cloudflare:workers";
 import { ProjectContextRepository } from "@/server/features/project-context/repositories/ProjectContextRepository";
 import { ProjectContextService } from "@/server/features/project-context/services/ProjectContextService";
 
-export type PaidResearchJob = {
+type PaidResearchJob = {
   projectId: string;
   tool: string;
   providerCategory: string;
