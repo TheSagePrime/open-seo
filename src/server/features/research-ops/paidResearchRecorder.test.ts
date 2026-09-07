@@ -41,14 +41,15 @@ describe("recordPaidResearchJob", () => {
   });
 
   it("writes the research log after a paid miss without duplicating provider cost", async () => {
+    const summary =
+      "get_keyword_metrics: 3 keywords, US/en, cache miss, clickstream off";
     const write = recordPaidResearchJob({
       projectId: "project_1",
       tool: "get_keyword_metrics",
       providerCategory: "dataforseo_labs",
       requestSize: 3,
       cacheHit: false,
-      summary:
-        "get_keyword_metrics: 3 keywords, US/en, cache miss, clickstream off",
+      summary,
     });
 
     expect(mocks.waitUntil).toHaveBeenCalledWith(write);
@@ -57,13 +58,7 @@ describe("recordPaidResearchJob", () => {
     expect(mocks.insertCost).not.toHaveBeenCalled();
     expect(mocks.applyContextUpdates).toHaveBeenCalledWith(
       "project_1",
-      [
-        expect.objectContaining({
-          appendResearchLog: expect.objectContaining({
-            summary: expect.stringContaining("get_keyword_metrics"),
-          }),
-        }),
-      ],
+      [{ appendResearchLog: { summary } }],
       "mcp",
     );
   });
