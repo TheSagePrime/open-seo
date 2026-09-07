@@ -23,6 +23,7 @@ vi.mock("@/server/features/research-ops/paidResearchRecorder", () => ({
 
 describe("research_keywords efficiency", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mocks.getProjectForOrganization.mockResolvedValue({
       id: "project_1",
       locationCode: 2840,
@@ -34,6 +35,7 @@ describe("research_keywords efficiency", () => {
       source: "related",
       usedFallback: false,
       cacheHit: false,
+      reuseSource: "provider",
       diagnostics: { requestedMode: "auto", threshold: 5, sourceAttempts: [] },
     });
   });
@@ -52,15 +54,56 @@ describe("research_keywords efficiency", () => {
     );
 
     expect(mocks.research).toHaveBeenCalledTimes(1);
-    expect(mocks.research.mock.calls[0]?.[0].keywords).toEqual(["Linux VPS"]);
-    expect(mocks.research.mock.calls[0]?.[0].clickstream).toBe(false);
-    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith(
+    expect(mocks.research).toHaveBeenCalledWith(
       expect.objectContaining({
-        projectId: "project_1",
-        tool: "research_keywords",
-        requestSize: 1,
-        cacheHit: false,
+        keywords: ["Linux VPS"],
+        clickstream: false,
       }),
+      expect.anything(),
+      undefined,
+      { refresh: false },
     );
+    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith({
+      projectId: "project_1",
+      tool: "research_keywords",
+      providerCategory: "dataforseo_labs",
+      requestSize: 1,
+      cacheHit: false,
+      reuseSource: undefined,
+      summary:
+        "research_keywords: Linux VPS | market 2840/en | provider research | clickstream off",
+    });
+  });
+
+  it("forwards refresh=true so normal reuse is explicitly bypassed", async () => {
+    await researchKeywordsTool.handler(
+      {
+        projectId: "project_1",
+        seeds: [{ seed: "Linux VPS" }],
+        refresh: true,
+      },
+      makeToolContext(),
+    );
+
+    expect(mocks.research).toHaveBeenCalledTimes(1);
+    expect(mocks.research).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keywords: ["Linux VPS"],
+        clickstream: false,
+      }),
+      expect.anything(),
+      undefined,
+      { refresh: true },
+    );
+    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith({
+      projectId: "project_1",
+      tool: "research_keywords",
+      providerCategory: "dataforseo_labs",
+      requestSize: 1,
+      cacheHit: false,
+      reuseSource: undefined,
+      summary:
+        "research_keywords: Linux VPS | market 2840/en | explicit refresh | clickstream off",
+    });
   });
 });

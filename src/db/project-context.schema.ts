@@ -118,6 +118,45 @@ export const projectResearchLog = sqliteTable(
   ],
 );
 
+// Durable evidence for paid research. Unlike the short R2 cache, snapshots do
+// not expire merely because a TTL elapsed. Multiple rows with the same request
+// hash are intentional: explicit refreshes preserve earlier evidence.
+export const projectResearchSnapshots = sqliteTable(
+  "project_research_snapshots",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    researchType: text("research_type").notNull(),
+    requestHash: text("request_hash").notNull(),
+    requestJson: text("request_json").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    source: text("source"),
+    providerCategory: text("provider_category"),
+    providerCostUsd: text("provider_cost_usd"),
+    origin: text("origin", {
+      enum: ["provider", "backfill", "import"],
+    }).notNull(),
+    researchedAt: text("researched_at").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (table) => [
+    index("project_research_snapshots_lookup_idx").on(
+      table.projectId,
+      table.researchType,
+      table.requestHash,
+      table.researchedAt,
+    ),
+    index("project_research_snapshots_project_researched_idx").on(
+      table.projectId,
+      table.researchedAt,
+    ),
+  ],
+);
+
 // Simple per-project audit trail for paid research jobs. This is not a finance
 // ledger: one row per MCP research job with cache hit/miss and request size.
 export const projectResearchCostHistory = sqliteTable(

@@ -113,6 +113,43 @@ export const projectResearchLog = pgTable(
   ],
 );
 
+// Durable evidence for paid research. Unlike the short R2 cache, snapshots do
+// not expire merely because a TTL elapsed. Multiple rows with the same request
+// hash are intentional: explicit refreshes preserve earlier evidence.
+export const projectResearchSnapshots = pgTable(
+  "project_research_snapshots",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    researchType: text("research_type").notNull(),
+    requestHash: text("request_hash").notNull(),
+    requestJson: text("request_json").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    source: text("source"),
+    providerCategory: text("provider_category"),
+    providerCostUsd: text("provider_cost_usd"),
+    origin: text("origin", {
+      enum: ["provider", "backfill", "import"],
+    }).notNull(),
+    researchedAt: text("researched_at").notNull(),
+    createdAt: text("created_at").notNull().default(isoNow),
+  },
+  (table) => [
+    index("project_research_snapshots_lookup_idx").on(
+      table.projectId,
+      table.researchType,
+      table.requestHash,
+      table.researchedAt,
+    ),
+    index("project_research_snapshots_project_researched_idx").on(
+      table.projectId,
+      table.researchedAt,
+    ),
+  ],
+);
+
 export const projectResearchCostHistory = pgTable(
   "project_research_cost_history",
   {

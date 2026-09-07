@@ -44,6 +44,12 @@ const inputSchema = {
     .describe(
       "Refine search volumes with clickstream data, which disaggregates Google Ads' grouped close-variant volumes (plurals/misspellings). DOUBLES the credit cost of each seed. OFF unless you pass true. No effect for countries served from Google Ads data.",
     ),
+  refresh: z
+    .boolean()
+    .optional()
+    .describe(
+      "Force fresh paid provider research, bypassing both the short cache and durable research snapshot. Defaults to false. Use only when stale evidence is not acceptable.",
+    ),
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -74,7 +80,7 @@ export const researchKeywordsTool = {
   config: {
     title: "Research keywords (bulk)",
     description:
-      "Research keyword data (search volume, difficulty, CPC, related ideas) for 1-5 seed keywords in one call. Charges credits per seed (~30-100 credits each, varies by source; flat ~96 for countries served from Google Ads data, where difficulty/intent are unavailable). Returns per-seed results — a single bad seed won't fail the batch.",
+      "Research keyword data (search volume, difficulty, CPC, related ideas) for 1-5 seed keywords in one call. Normal requests reuse the short cache first, then durable previously purchased research. DataForSEO is called only when reusable research is absent, unless refresh=true explicitly forces fresh paid research. Returns per-seed results — a single bad seed won't fail the batch.",
     inputSchema,
     outputSchema: {
       results: z.array(
@@ -128,6 +134,8 @@ export const researchKeywordsTool = {
               clickstream,
             },
             context.billing,
+            undefined,
+            { refresh: args.refresh === true },
           );
           return {
             seed: item.seed,
@@ -136,6 +144,7 @@ export const researchKeywordsTool = {
             source: data.source,
             usedFallback: data.usedFallback,
             cacheHit: data.cacheHit === true,
+            reuseSource: data.reuseSource ?? "provider",
             rows: data.rows,
           };
         } catch (error) {
@@ -149,8 +158,14 @@ export const researchKeywordsTool = {
     );
 
     const okResults = results.filter((result) => result.ok);
-    const cacheHit =
-      okResults.length > 0 && okResults.every((result) => result.cacheHit);
+    const allReused =
+      okResults.length > 0 &&
+      okResults.every((result) => result.reuseSource !== "provider");
+    const reuseSource = allReused
+      ? okResults.some((result) => result.reuseSource === "snapshot")
+        ? "snapshot"
+        : "cache"
+      : undefined;
     if (okResults.length > 0) {
       const markets = [
         ...new Set(
@@ -160,13 +175,19 @@ export const researchKeywordsTool = {
           }),
         ),
       ].join(", ");
+      const reuseLabel = allReused
+        ? `${reuseSource} reuse`
+        : args.refresh === true
+          ? "explicit refresh"
+          : "provider research";
       void recordPaidResearchJob({
         projectId: args.projectId,
         tool: "research_keywords",
         providerCategory: "dataforseo_labs",
         requestSize: seeds.length,
-        cacheHit,
-        summary: `research_keywords: ${okResults.map((result) => result.seed).join(", ")} | market ${markets} | ${cacheHit ? "cache hit" : "cache miss"} | clickstream ${clickstream ? "on" : "off"}`,
+        cacheHit: allReused,
+        reuseSource,
+        summary: `research_keywords: ${okResults.map((result) => result.seed).join(", ")} | market ${markets} | ${reuseLabel} | clickstream ${clickstream ? "on" : "off"}`,
       });
     }
 
@@ -178,7 +199,13 @@ export const researchKeywordsTool = {
           if (!r.ok) {
             return `## "${r.seed}" — FAILED\n${r.error}`;
           }
-          const header = `## "${r.seed}" — ${r.rowCount} keywords (source: ${r.source}${r.usedFallback ? ", fallback" : ""})`;
+          const reuse =
+            r.reuseSource === "snapshot"
+              ? ", durable snapshot"
+              : r.reuseSource === "cache"
+                ? ", cache"
+                : "";
+          const header = `## "${r.seed}" — ${r.rowCount} keywords (source: ${r.source}${r.usedFallback ? ", fallback" : ""}${reuse})`;
           if (r.rowCount === 0) {
             return `${header}\n(no keywords returned)`;
           }

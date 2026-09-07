@@ -169,6 +169,13 @@
       "when": 1788770000000,
       "tag": "0023_research_cost_history",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788734421176,
+      "tag": "0024_woozy_warhawk",
+      "breakpoints": true
     }
   ]
 }

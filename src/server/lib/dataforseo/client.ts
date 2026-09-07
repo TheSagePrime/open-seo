@@ -154,10 +154,8 @@ async function recordProviderCostIfScoped(
 ) {
   if (!customer.projectId || billing.costUsd <= 0) return;
 
-  const {
-    calculateOpenSeoCredits,
-    recordDataforseoProviderCost,
-  } = await import("@/server/features/research-ops/providerCostRecorder");
+  const { calculateOpenSeoCredits, recordDataforseoProviderCost } =
+    await import("@/server/features/research-ops/providerCostRecorder");
 
   await recordDataforseoProviderCost({
     projectId: customer.projectId,

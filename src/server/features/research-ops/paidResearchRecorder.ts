@@ -2,12 +2,13 @@ import { waitUntil } from "cloudflare:workers";
 import { ProjectContextRepository } from "@/server/features/project-context/repositories/ProjectContextRepository";
 import { ProjectContextService } from "@/server/features/project-context/services/ProjectContextService";
 
-export type PaidResearchJob = {
+type PaidResearchJob = {
   projectId: string;
   tool: string;
   providerCategory: string;
   requestSize: number;
   cacheHit: boolean;
+  reuseSource?: "cache" | "snapshot";
   providerCostUsd?: string | null;
   creditsCharged?: number | null;
   summary: string;
@@ -17,12 +18,13 @@ async function persistPaidResearchJob(job: PaidResearchJob): Promise<void> {
   try {
     if (job.cacheHit) {
       // Provider misses are recorded centrally by the DataForSEO client with
-      // their real path/cost. Keep only zero-cost cache reuse events here so
-      // one paid call never produces a duplicate cost-history row.
+      // their real path/cost. Keep only zero-cost reuse events here so one paid
+      // call never produces a duplicate cost-history row. Durable snapshot
+      // reuse is kept distinct from the short R2 cache in provider_category.
       await ProjectContextRepository.insertResearchCost({
         projectId: job.projectId,
         tool: job.tool,
-        providerCategory: "cache",
+        providerCategory: job.reuseSource ?? "cache",
         requestSize: job.requestSize,
         cacheHit: true,
         providerCostUsd: "0",

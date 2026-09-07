@@ -1,4 +1,4 @@
-export type ResearchSeed = {
+type ResearchSeed = {
   seed: string;
   locationCode?: number;
   languageCode?: string;

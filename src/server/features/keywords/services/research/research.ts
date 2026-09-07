@@ -8,6 +8,10 @@ import {
   setCached,
 } from "@/server/lib/r2-cache";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
+import {
+  findLatestResearchSnapshot,
+  saveResearchSnapshot,
+} from "@/server/features/research-ops/researchSnapshots";
 import type { KeywordResearchRow } from "@/types/keywords";
 import type { ResolvedResearchKeywordsInput } from "@/types/schemas/keywords";
 import { z } from "zod";
@@ -39,12 +43,15 @@ type ResearchDiagnostics = {
   sourceAttempts: SourceAttempt[];
 };
 
+type ResearchReuseSource = "cache" | "snapshot" | "provider";
+
 type ResearchResult = {
   rows: KeywordResearchRow[];
   source: ResearchSource;
   usedFallback: boolean;
   diagnostics: ResearchDiagnostics;
   cacheHit?: boolean;
+  reuseSource?: ResearchReuseSource;
 };
 
 type CachedResult = ResearchResult;
@@ -242,6 +249,22 @@ async function fetchManualRows(
   };
 }
 
+function buildSnapshotRequest(
+  input: ResolvedResearchKeywordsInput,
+  normalizedKeywords: string[],
+  mode: KeywordMode,
+): Record<string, unknown> {
+  return {
+    keywords: normalizedKeywords,
+    locationCode: input.locationCode,
+    languageCode: input.languageCode,
+    resultLimit: input.resultLimit,
+    mode,
+    depth: 3,
+    clickstream: input.clickstream,
+  };
+}
+
 async function buildResearchCacheKey(
   input: ResolvedResearchKeywordsInput,
   normalizedKeywords: string[],
@@ -252,13 +275,7 @@ async function buildResearchCacheKey(
     cacheVersion: CACHE_VERSION,
     organizationId: billingCustomer.organizationId,
     projectId: input.projectId,
-    keywords: normalizedKeywords,
-    locationCode: input.locationCode,
-    languageCode: input.languageCode,
-    resultLimit: input.resultLimit,
-    mode,
-    depth: 3,
-    clickstream: input.clickstream,
+    ...buildSnapshotRequest(input, normalizedKeywords, mode),
   });
 }
 
@@ -286,10 +303,49 @@ function persistRows(
   });
 }
 
+async function findSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+}) {
+  try {
+    return await findLatestResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "research_keywords",
+      request: params.request,
+    });
+  } catch (error) {
+    console.error("research-ops.snapshot.lookup failed:", error);
+    return null;
+  }
+}
+
+async function saveSnapshotSafely(params: {
+  projectId: string;
+  request: Record<string, unknown>;
+  result: ResearchResult;
+}) {
+  try {
+    await saveResearchSnapshot({
+      projectId: params.projectId,
+      researchType: "research_keywords",
+      request: params.request,
+      payload: params.result,
+      source: params.result.source,
+      providerCategory: "dataforseo",
+      origin: "provider",
+    });
+  } catch (error) {
+    // A paid provider response stays successful even if durable bookkeeping is
+    // temporarily unavailable. The short cache still protects immediate retry.
+    console.error("research-ops.snapshot.persist failed:", error);
+  }
+}
+
 export async function research(
   input: ResolvedResearchKeywordsInput,
   billingCustomer: BillingCustomerContext,
   creditFeature?: CreditFeature,
+  options: { refresh?: boolean } = {},
 ): Promise<ResearchResult> {
   const uniqueKeywords = [
     ...new Set(input.keywords.map(normalizeKeyword)),
@@ -303,7 +359,7 @@ export async function research(
   const provider = getKeywordDataProvider(input.locationCode);
   // Labs source modes and clickstream refinement don't exist for
   // Google-Ads-served countries; collapse both so equivalent requests share
-  // one cache entry.
+  // one cache/snapshot identity.
   const effectiveInput: ResolvedResearchKeywordsInput =
     provider === "google_ads"
       ? { ...input, mode: "auto", clickstream: false }
@@ -315,15 +371,37 @@ export async function research(
     mode,
     billingCustomer,
   );
+  const snapshotRequest = buildSnapshotRequest(
+    effectiveInput,
+    uniqueKeywords,
+    mode,
+  );
 
-  const cachedRaw = await getCached(cacheKey);
-  const cachedResult = cachedResultSchema.safeParse(cachedRaw);
-  const cached: CachedResult | null = cachedResult.success
-    ? cachedResult.data
-    : null;
+  if (!options.refresh) {
+    const cachedRaw = await getCached(cacheKey);
+    const cachedResult = cachedResultSchema.safeParse(cachedRaw);
+    const cached: CachedResult | null = cachedResult.success
+      ? cachedResult.data
+      : null;
 
-  if (cached && cached.rows.length > 0) {
-    return { ...cached, cacheHit: true };
+    if (cached) {
+      return { ...cached, cacheHit: true, reuseSource: "cache" };
+    }
+
+    const snapshot = await findSnapshotSafely({
+      projectId: input.projectId,
+      request: snapshotRequest,
+    });
+    const snapshotResult = cachedResultSchema.safeParse(snapshot?.payload);
+    if (snapshotResult.success) {
+      await setCached(cacheKey, snapshotResult.data, CACHE_TTL.researchResult);
+      persistRows(effectiveInput, snapshotResult.data.rows);
+      return {
+        ...snapshotResult.data,
+        cacheHit: false,
+        reuseSource: "snapshot",
+      };
+    }
   }
 
   const result =
@@ -350,7 +428,12 @@ export async function research(
           );
 
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
+  await saveSnapshotSafely({
+    projectId: input.projectId,
+    request: snapshotRequest,
+    result,
+  });
   persistRows(effectiveInput, result.rows);
 
-  return { ...result, cacheHit: false };
+  return { ...result, cacheHit: false, reuseSource: "provider" };
 }
