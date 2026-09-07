@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { sortBy } from "remeda";
 import { db } from "@/db";
 import { keywordMetrics } from "@/db/schema";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
@@ -8,32 +9,34 @@ import type { KeywordMetricRow } from "@/server/lib/dataforseo/keyword-metrics";
 const QUERY_CHUNK_SIZE = 80;
 
 type DurableKeywordMetricRecord = typeof keywordMetrics.$inferSelect;
+type MonthlySearch = KeywordMetricRow["monthlySearches"][number];
+
+function isMonthlySearch(value: unknown): value is MonthlySearch {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  if (!("year" in value) || !("month" in value) || !("searchVolume" in value)) {
+    return false;
+  }
+  return (
+    typeof value.year === "number" &&
+    typeof value.month === "number" &&
+    typeof value.searchVolume === "number"
+  );
+}
 
 function parseMonthlySearches(
   value: string | null,
 ): KeywordMetricRow["monthlySearches"] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => {
-      if (!item || typeof item !== "object") return [];
-      const row = item as Record<string, unknown>;
-      if (
-        typeof row.year !== "number" ||
-        typeof row.month !== "number" ||
-        typeof row.searchVolume !== "number"
-      ) {
-        return [];
-      }
-      return [
-        {
-          year: row.year,
-          month: row.month,
-          searchVolume: row.searchVolume,
-        },
-      ];
-    });
+    return parsed.filter(isMonthlySearch).map((row) => ({
+      year: row.year,
+      month: row.month,
+      searchVolume: row.searchVolume,
+    }));
   } catch {
     return [];
   }
@@ -60,13 +63,16 @@ export async function loadDurableKeywordMetrics(params: {
   locationCode: number;
   languageCode: string;
 }): Promise<KeywordMetricRow[]> {
-  const keywords = [
-    ...new Set(
-      params.keywords
-        .map(normalizeKeyword)
-        .filter((keyword) => keyword.length > 0),
-    ),
-  ].sort();
+  const keywords = sortBy(
+    [
+      ...new Set(
+        params.keywords
+          .map(normalizeKeyword)
+          .filter((keyword) => keyword.length > 0),
+      ),
+    ],
+    (keyword) => keyword,
+  );
   if (keywords.length === 0) return [];
 
   const records: DurableKeywordMetricRecord[] = [];
