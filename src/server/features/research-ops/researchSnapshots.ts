@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import { sortBy } from "remeda";
 import { db } from "@/db";
 import { projectResearchSnapshots } from "@/db/schema";
 
@@ -31,16 +32,21 @@ type ResearchSnapshot = {
   createdAt: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
   }
-  if (value && typeof value === "object") {
+  if (isRecord(value)) {
+    const entries = sortBy(
+      Object.entries(value).filter(([, item]) => item !== undefined),
+      ([key]) => key,
+    );
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, item]) => item !== undefined)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, item]) => [key, canonicalize(item)]),
+      entries.map(([key, item]) => [key, canonicalize(item)]),
     );
   }
   return value;
@@ -49,7 +55,16 @@ function canonicalize(value: unknown): unknown {
 function canonicalResearchRequest(
   request: Record<string, unknown>,
 ): Record<string, unknown> {
-  return canonicalize(request) as Record<string, unknown>;
+  const canonical = canonicalize(request);
+  if (!isRecord(canonical)) {
+    throw new TypeError("Research snapshot request must be an object");
+  }
+  return canonical;
+}
+
+function parseJson(value: string): unknown {
+  const parsed: unknown = JSON.parse(value);
+  return parsed;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -74,13 +89,16 @@ function parseSnapshotRow(
   row: typeof projectResearchSnapshots.$inferSelect,
 ): ResearchSnapshot | null {
   try {
+    const request = parseJson(row.requestJson);
+    if (!isRecord(request)) return null;
+    const payload = parseJson(row.payloadJson);
     return {
       id: row.id,
       projectId: row.projectId,
       researchType: row.researchType,
       requestHash: row.requestHash,
-      request: JSON.parse(row.requestJson) as Record<string, unknown>,
-      payload: JSON.parse(row.payloadJson) as unknown,
+      request,
+      payload,
       source: row.source,
       providerCategory: row.providerCategory,
       providerCostUsd: row.providerCostUsd,
