@@ -54,16 +54,25 @@ describe("research_keywords efficiency", () => {
     );
 
     expect(mocks.research).toHaveBeenCalledTimes(1);
-    expect(mocks.research.mock.calls[0]?.[0].keywords).toEqual(["Linux VPS"]);
-    expect(mocks.research.mock.calls[0]?.[0].clickstream).toBe(false);
-    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith(
+    expect(mocks.research).toHaveBeenCalledWith(
       expect.objectContaining({
-        projectId: "project_1",
-        tool: "research_keywords",
-        requestSize: 1,
-        cacheHit: false,
+        keywords: ["Linux VPS"],
+        clickstream: false,
       }),
+      expect.anything(),
+      undefined,
+      { refresh: false },
     );
+    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith({
+      projectId: "project_1",
+      tool: "research_keywords",
+      providerCategory: "dataforseo_labs",
+      requestSize: 1,
+      cacheHit: false,
+      reuseSource: undefined,
+      summary:
+        "research_keywords: Linux VPS | market 2840/en | provider research | clickstream off",
+    });
   });
 
   it("forwards refresh=true so normal reuse is explicitly bypassed", async () => {
@@ -77,14 +86,24 @@ describe("research_keywords efficiency", () => {
     );
 
     expect(mocks.research).toHaveBeenCalledTimes(1);
-    expect(mocks.research.mock.calls[0]?.[3]).toEqual({ refresh: true });
-    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith(
+    expect(mocks.research).toHaveBeenCalledWith(
       expect.objectContaining({
-        projectId: "project_1",
-        tool: "research_keywords",
-        cacheHit: false,
-        summary: expect.stringContaining("explicit refresh"),
+        keywords: ["Linux VPS"],
+        clickstream: false,
       }),
+      expect.anything(),
+      undefined,
+      { refresh: true },
     );
+    expect(mocks.recordPaidResearchJob).toHaveBeenCalledWith({
+      projectId: "project_1",
+      tool: "research_keywords",
+      providerCategory: "dataforseo_labs",
+      requestSize: 1,
+      cacheHit: false,
+      reuseSource: undefined,
+      summary:
+        "research_keywords: Linux VPS | market 2840/en | explicit refresh | clickstream off",
+    });
   });
 });
